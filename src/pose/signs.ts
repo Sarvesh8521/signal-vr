@@ -23,13 +23,14 @@ export const SIGNS: SignDef[] = [
 
 export function scoreSign(def: SignDef, f: Features): number {
   let sum = 0, n = 0, min = 1;
-  for (const [k, [mu, sigma]] of Object.entries(def.t) as [keyof Features, T][]) {
-    const z = (f[k] - mu) / sigma; const g = Math.exp(-0.5 * z * z);
+  for (const k in def.t) {
+    const tt = def.t[k as keyof Features] as T; const z = (f[k as keyof Features] - tt[0]) / tt[1]; const g = Math.exp(-0.5 * z * z);
     sum += g; n++; if (g < min) min = g;
   }
   return n ? 0.5 * (sum / n) + 0.5 * min : 0; // one strong mismatch can't be averaged away
 }
 export function recognize(f: Features, set: SignDef[] = SIGNS): Match {
-  const scores = set.map((s) => ({ s: s.id, v: scoreSign(s, f) })).sort((a, b) => b.v - a.v);
-  return { sign: scores[0].s, confidence: scores[0].v, margin: scores[0].v - (scores[1]?.v ?? 0) };
+  let best = -1, second = 0, id = '';
+  for (let i = 0; i < set.length; i++) { const v = scoreSign(set[i], f); if (v > best) { if (best > 0) second = best; best = v; id = set[i].id; } else if (v > second) second = v; }
+  return { sign: id, confidence: best, margin: best - second };
 }
