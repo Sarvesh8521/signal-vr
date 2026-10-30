@@ -1,6 +1,7 @@
-import { createSystem, Group, Mesh, MeshBasicMaterial, PlaneGeometry, SphereGeometry, Points, PointsMaterial, BufferGeometry, Float32BufferAttribute, Color, Vector3, CanvasTexture, AdditiveBlending, BackSide } from '@iwsdk/core';
+import { createSystem, Group, Mesh, MeshBasicMaterial, PlaneGeometry, SphereGeometry, Points, PointsMaterial, BufferGeometry, Float32BufferAttribute, Color, Vector3, CanvasTexture, AdditiveBlending, BackSide, RingGeometry, DoubleSide } from '@iwsdk/core';
 import { Game, GameEvent, ROUND_MS } from './game';
 import { TestLog } from './testlog';
+import { MrNode } from './mr';
 import { startWebcam } from './webcam';
 function glowTex(): CanvasTexture { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d')!; const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new CanvasTexture(c); }
 const GLOW = glowTex();
@@ -17,6 +18,7 @@ const label = (id: string | null) => (id ? SIGNS.find((s) => s.id === id)?.label
 const hint = (id: string | null) => (id ? SIGNS.find((s) => s.id === id)?.hint ?? '' : '');
 const DEBUG = typeof location !== 'undefined' && /[?&]debug/.test(location.search);
 const RECORD = typeof location !== 'undefined' && /[?&]record/.test(location.search);
+const MR = typeof location !== 'undefined' && /[?&]mr/.test(location.search);
 const WEBCAM = typeof location !== 'undefined' && /[?&]webcam/.test(location.search);
 
 export class GameSystem extends createSystem({}) {
@@ -28,14 +30,14 @@ export class GameSystem extends createSystem({}) {
   private barBack!: Mesh; private barFill!: Mesh; private resT!: TextPlane; private btn2!: TextPlane; private btn2World = new Vector3();
   private parts: { m: Mesh; v: Vector3; life: number }[] = []; private pulse = 0; private floatLife = 0; private stars!: Points; private touching: Record<string, boolean> = {}; private pokeCool = 0; private keyPoke = false;
   private lastTickSec = -1;
-  private tlog: TestLog | null = RECORD ? new TestLog() : null; private camOn = WEBCAM ? startWebcam((j) => { this.handIn.override = j; }).catch((e) => { console.warn('webcam mode failed', e); alert('Webcam mode could not start: ' + (e && e.message ? e.message : e)); }) : null; private sky!: Points; private skyKey = ''; private trail!: Points; private trailPos!: Float32Array; private trailCol!: Float32Array; private trailHead = 0; private lastTips: Vector3[] = [];
+  private tlog: TestLog | null = RECORD ? new TestLog() : null; private camOn = WEBCAM ? startWebcam((j) => { this.handIn.override = j; }).catch((e) => { console.warn('webcam mode failed', e); alert('Webcam mode could not start: ' + (e && e.message ? e.message : e)); }) : null; private domeMat!: MeshBasicMaterial; private wave!: Mesh; private waveT = 1; private restore = (() => { try { return globalThis.localStorage?.getItem('signal:seenTeach') ? 0.6 : 0.12; } catch { return 0.12; } })(); private chainT!: TextPlane; private mr: MrNode | null = null; private sky!: Points; private skyKey = ''; private trail!: Points; private trailPos!: Float32Array; private trailCol!: Float32Array; private trailHead = 0; private lastTips: Vector3[] = [];
 
   init(): void {
     this.game = new Game(makeStore()); this.handIn = new HandInput(this.renderer);
     const scene = this.scene; scene.background = new Color(COLORS.bg); scene.add(this.root); this.root.position.set(0, 1.3, -0.8);
     { const dg = new SphereGeometry(30, 24, 16), dc: number[] = [], dp = dg.getAttribute('position'), top = new Color(0x1b0a3a), mid = new Color(0x0a1230), bot = new Color(0x02040c), tc = new Color();
       for (let i = 0; i < dp.count; i++) { const h = dp.getY(i) / 30; (h > 0 ? tc.copy(mid).lerp(top, Math.min(1, h * 1.4)) : tc.copy(mid).lerp(bot, Math.min(1, -h * 1.4))); dc.push(tc.r, tc.g, tc.b); }
-      dg.setAttribute('color', new Float32BufferAttribute(dc, 3)); const dome = new Mesh(dg, new MeshBasicMaterial({ vertexColors: true, side: BackSide, depthWrite: false })); dome.renderOrder = -10; scene.add(dome); }
+      dg.setAttribute('color', new Float32BufferAttribute(dc, 3)); this.domeMat = new MeshBasicMaterial({ vertexColors: true, side: BackSide, depthWrite: false }); const dome = new Mesh(dg, this.domeMat); dome.renderOrder = -10; scene.add(dome); }
 
     this.root.add(this.menu, this.playG, this.result);
     // stars
@@ -49,6 +51,8 @@ export class GameSystem extends createSystem({}) {
       this.sky = new Points(sg, new PointsMaterial({ size: 0.16, map: GLOW, vertexColors: true, sizeAttenuation: true, transparent: true, depthWrite: false, blending: AdditiveBlending })); scene.add(this.sky); void n; }
     { const T = 60; this.trailPos = new Float32Array(T * 3).fill(-99); this.trailCol = new Float32Array(T * 3); const tg = new BufferGeometry(); tg.setAttribute('position', new Float32BufferAttribute(this.trailPos, 3)); tg.setAttribute('color', new Float32BufferAttribute(this.trailCol, 3));
       this.trail = new Points(tg, new PointsMaterial({ size: 0.035, map: GLOW, vertexColors: true, sizeAttenuation: true, transparent: true, depthWrite: false, blending: AdditiveBlending })); this.trail.frustumCulled = false; scene.add(this.trail); }
+    if (MR) { scene.background = null; scene.children.forEach((c) => { if (c.renderOrder === -10) c.visible = false; }); this.stars.visible = false; this.mr = new MrNode(scene, this.renderer); }
+    this.wave = new Mesh(new RingGeometry(0.92, 1, 72), new MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0, depthWrite: false, blending: AdditiveBlending, side: DoubleSide })); this.wave.position.copy(this.root.position); scene.add(this.wave);
 
     // menu
     this.title = new TextPlane(0.7, 0.2); this.title.mesh.position.set(0, 0.2, 0); this.menu.add(this.title.mesh);
@@ -64,6 +68,7 @@ export class GameSystem extends createSystem({}) {
     this.hintT = new TextPlane(0.5, 0.1); this.hintT.mesh.position.set(0.22, -0.11, 0); this.playG.add(this.hintT.mesh);
     this.banner = new TextPlane(0.9, 0.08); this.banner.mesh.position.set(0, -0.3, 0.05); this.playG.add(this.banner.mesh);
     this.floatT = new TextPlane(0.4, 0.08); this.floatT.mesh.position.set(0.22, 0.25, 0.02); this.playG.add(this.floatT.mesh);
+    this.chainT = new TextPlane(0.5, 0.07); this.chainT.mesh.position.set(0.22, 0.31, 0.02); this.playG.add(this.chainT.mesh);
     // result
     this.resT = new TextPlane(0.8, 0.4); this.resT.mesh.position.set(0, 0.1, 0); this.result.add(this.resT.mesh);
     this.btn2 = new TextPlane(0.34, 0.11); this.btn2.mesh.position.set(0, -0.2, 0.2); this.result.add(this.btn2.mesh);
@@ -91,9 +96,10 @@ export class GameSystem extends createSystem({}) {
         if (e.phase === 'playing' || e.phase === 'teach') this.sfx.start(); if (e.phase === 'result') { this.sfx.end(); if (this.game.newBest) setTimeout(() => this.sfx.best(), 700); }
       } else if (e.type === 'target') { this.setGhost(e.sign); this.ghost.setColor(0x22d3ee); }
       else if (e.type === 'success') {
-        this.sfx.success(e.combo); this.burst(e.daily ? COLORS.amber : COLORS.green); this.pulse = 0.35; this.ghost.setColor(0x4ade80);
+        this.sfx.success(e.combo); this.mr?.hit(); this.burst(e.daily ? COLORS.amber : COLORS.green); this.pulse = 0.35; this.ghost.setColor(0x4ade80); this.waveT = 0; this.restore = this.game.phase === 'teach' && e.sign === 'ILY' ? 1 : Math.min(1, this.restore + 0.1);
         this.floatT.set(`+${e.points}${e.daily ? '  DAILY x2' : ''}${e.combo >= 3 ? `   COMBO ${e.combo}` : ''}${this.game.leveledUp === e.sign ? '   STAR LIT!' : ''}${this.game.phase === 'teach' && e.sign === 'ILY' ? '\nYOU JUST SIGNED: I LOVE YOU' : ''}`, { color: e.daily ? COLORS.amber : COLORS.green, size: 0.04 }); this.floatLife = 1;
       } else if (e.type === 'timeout') this.sfx.timeout();
+      else if (e.type === 'chain') { this.sfx.best(); this.mr?.bloom(); this.burst(COLORS.amber); this.pulse = 0.6; this.floatT.set(`${e.word}!  +${e.bonus}`, { color: COLORS.amber, size: 0.05 }); this.floatLife = 1.4; }
     }
   }
   private setGhost(id: string) { if (this.ghostPose === id) return; this.ghostPose = id; this.ghost.setPose(makeHand(SPECS[id])); }
@@ -126,9 +132,11 @@ export class GameSystem extends createSystem({}) {
     pa.needsUpdate = true; ca.needsUpdate = true;
   }
   private render(frame: ReturnType<HandInput['read']>, dt: number) {
-    this.updateTrail(frame);
+    this.updateTrail(frame); this.mr?.update(dt, performance.now() / 1000);
     const g = this.game; const t = performance.now() / 1000;
     this.stars.rotation.y += dt * 0.01;
+    { const r = this.restore; this.domeMat.color.setScalar(0.3 + 0.7 * r); (this.stars.material as PointsMaterial).opacity = 0.25 + 0.55 * r; if (this.sky) (this.sky.material as PointsMaterial).opacity = 0.4 + 0.6 * r;
+      const wm = this.wave.material as MeshBasicMaterial; if (this.waveT < 1) { this.waveT = Math.min(1, this.waveT + dt * 0.9); wm.opacity = (1 - this.waveT) * 0.6; this.wave.scale.setScalar(0.1 + this.waveT * 7); } else wm.opacity = 0; }
     { const lv = SIGNS.map((x) => g.mastery.level(x.id)); const key = lv.join(''); if (key !== this.skyKey) { this.skyKey = key; const col = this.sky.geometry.getAttribute('color'); lv.forEach((L, i) => { for (let k = 0; k < 3; k++) { const on = L > k; col.setXYZ(i * 3 + k, on ? 1 : 0.18, on ? 0.82 : 0.2, on ? 0.25 : 0.3); } }); col.needsUpdate = true; } (this.sky.material as PointsMaterial).opacity = 0.75 + Math.sin(t * 1.3) * 0.2; }
     if (this.menu.visible) {
       this.title.set('SIGNAL', { size: 0.15, color: COLORS.cyan, weight: '900' });
@@ -148,6 +156,7 @@ export class GameSystem extends createSystem({}) {
       this.banner.mesh.visible = g.trackingLost; this.banner.set(frame.tracked === 0 ? 'Show your hand to the headset  (timer paused)' : '', { size: 0.03, color: COLORS.red, bg: COLORS.panel });
       if (!teach && sec <= 10 && sec !== this.lastTickSec && sec > 0 && !g.trackingLost) { this.lastTickSec = sec; this.sfx.tick(); }
       this.pulse = Math.max(0, this.pulse - dt); const k = 2.2 * (1 + this.pulse * 0.7); this.ghost.group.scale.setScalar(k); this.ghost.group.position.y = -0.12 + Math.sin(t * 1.6) * 0.008; this.ghost.group.rotation.y = Math.PI + Math.sin(t * 0.8) * 0.55; this.ghost.group.rotation.x = -0.2;
+      { const w = g.chain; this.chainT.set(w ? w.split('').map((c, i) => (i === g.chainPos ? '[' + c + ']' : c)).join(' ') : (this.mr && !this.mr.placed ? 'LOOK AT A WALL OR TABLE, THEN SIGN' : ''), { size: 0.045, color: COLORS.amber }); }
       this.floatLife = Math.max(0, this.floatLife - dt * 1.4); this.floatT.mesh.visible = this.floatLife > 0; this.floatT.mesh.position.y = 0.25 + (1 - this.floatLife) * 0.12; (this.floatT.mesh.material as MeshBasicMaterial).opacity = Math.min(1, this.floatLife * 1.5);
     }
     if (this.result.visible) {

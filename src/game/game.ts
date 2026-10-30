@@ -11,7 +11,8 @@ export type GameEvent =
   | { type: 'phase'; phase: Phase }
   | { type: 'target'; sign: string }
   | { type: 'success'; sign: string; points: number; combo: number; daily: boolean }
-  | { type: 'timeout'; sign: string };
+  | { type: 'timeout'; sign: string }
+  | { type: 'chain'; word: string; bonus: number };
 export interface Input { match: Match | null; poke: string | null; features?: Features | null; }
 
 export const ROUND_MS = 60000, TARGET_TIMEOUT_MS = 10000, HINT_AFTER_MS = 3500, CELEBRATE_MS = 550;
@@ -19,12 +20,15 @@ const EASY = ['B', 'L', 'Y', 'I', 'FIST'];
 // First five minutes: easiest win first, then an emotional payoff - your first real sentence.
 const TEACH = ['B', 'L', 'ILY'];
 const ALL = SIGNS.map((s) => s.id);
+// Signal Chain words: spelled only with letters that recognise reliably on real hands.
+export const WORDS = ['BOWL', 'BOIL', 'OILY', 'BLOW', 'VOW', 'LOW'];
 
 export class Game {
   phase: Phase = 'menu';
   score = 0; combo = 0; bestCombo = 0; solved = 0; timeLeft = ROUND_MS;
   target: string | null = null; targetAge = 0; holdProgress = 0; trackingLost = false; celebrate = 0;
   teachIndex = 0; coach: string | null = null; private coachAt = 0; leveledUp: string | null = null; mastery: Mastery; best: number; streak: number; dailyId: string; newBest = false; roundStreak = 0;
+  chain: string | null = null; chainPos = 0; private sinceChain = 0;
   private stab = new Stabilizer(DEFAULT_STAB); private prev: string | null = null; private now = 0;
   constructor(private store: Store, private rand: () => number = Math.random, private today = dayKey()) {
     this.mastery = new Mastery(store); this.best = Number(store.get('best') ?? 0); this.dailyId = dailySign(today, ALL); this.streak = currentStreak(store, today);
@@ -46,11 +50,15 @@ export class Game {
   }
   private nextTarget(ev: GameEvent[], forced?: string) {
     this.coach = null; this.leveledUp = null;
+    if (!forced && this.phase === 'playing') {
+      if (!this.chain && this.sinceChain >= 5 && this.solved >= 3) { this.chain = WORDS[Math.floor(this.rand() * WORDS.length)]; this.chainPos = 0; }
+      if (this.chain) forced = this.chain[this.chainPos];
+    }
     this.target = forced ?? this.pick(); this.prev = this.target; this.targetAge = 0; this.holdProgress = 0; this.stab.reset();
     ev.push({ type: 'target', sign: this.target });
   }
   startRound(ev: GameEvent[] = []) {
-    this.score = 0; this.combo = 0; this.bestCombo = 0; this.solved = 0; this.timeLeft = ROUND_MS; this.newBest = false; this.celebrate = 0;
+    this.score = 0; this.combo = 0; this.bestCombo = 0; this.solved = 0; this.timeLeft = ROUND_MS; this.newBest = false; this.celebrate = 0; this.chain = null; this.chainPos = 0; this.sinceChain = 0;
     this.setPhase('playing', ev); this.nextTarget(ev); return ev;
   }
   startTeach(ev: GameEvent[] = []) { this.teachIndex = 0; this.setPhase('teach', ev); this.nextTarget(ev, TEACH[0]); return ev; }
@@ -73,7 +81,7 @@ export class Game {
     if (this.phase === 'playing') { this.timeLeft -= dt; if (this.timeLeft <= 0) { this.timeLeft = 0; this.finish(ev); return ev; } }
     this.targetAge += dt;
     if (st.confirmed && st.confirmed === this.target) { this.succeed(ev); return ev; }
-    if (this.phase === 'playing' && this.targetAge >= TARGET_TIMEOUT_MS) { ev.push({ type: 'timeout', sign: this.target! }); this.mastery.miss(this.target!); this.combo = 0; this.nextTarget(ev); }
+    if (this.phase === 'playing' && this.targetAge >= TARGET_TIMEOUT_MS) { ev.push({ type: 'timeout', sign: this.target! }); this.mastery.miss(this.target!); this.combo = 0; this.chain = null; this.chainPos = 0; this.sinceChain = 0; this.nextTarget(ev); }
     return ev;
   }
   private succeed(ev: GameEvent[]) {
@@ -81,6 +89,10 @@ export class Game {
     const speed = Math.round(50 * Math.max(0, 1 - this.targetAge / 6000)); const pts = (100 + speed + Math.min(this.combo, 10) * 10) * (isDaily ? 2 : 1);
     if (this.phase === 'playing') { this.score += pts; this.solved++; }
     const m = this.mastery.hit(this.target!); this.leveledUp = m.leveledUp ? this.target : null;
+    if (this.phase === 'playing') {
+      if (this.chain) { this.chainPos++; if (this.chainPos >= this.chain.length) { const bonus = 60 * this.chain.length; this.score += bonus; ev.push({ type: 'chain', word: this.chain, bonus }); this.chain = null; this.chainPos = 0; this.sinceChain = 0; } }
+      else this.sinceChain++;
+    }
     ev.push({ type: 'success', sign: this.target!, points: pts, combo: this.combo, daily: isDaily }); this.celebrate = this.phase === 'teach' && this.teachIndex === TEACH.length - 1 ? 2200 : CELEBRATE_MS; this.holdProgress = 1;
   }
   private afterCelebrate(ev: GameEvent[]) {
