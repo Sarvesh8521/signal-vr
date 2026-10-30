@@ -1,6 +1,7 @@
 import { createSystem, Group, Mesh, MeshBasicMaterial, PlaneGeometry, SphereGeometry, Points, PointsMaterial, BufferGeometry, Float32BufferAttribute, Color, Vector3, CanvasTexture, AdditiveBlending, BackSide } from '@iwsdk/core';
 import { Game, GameEvent, ROUND_MS } from './game';
 import { TestLog } from './testlog';
+import { startWebcam } from './webcam';
 function glowTex(): CanvasTexture { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d')!; const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new CanvasTexture(c); }
 const GLOW = glowTex();
 
@@ -16,6 +17,7 @@ const label = (id: string | null) => (id ? SIGNS.find((s) => s.id === id)?.label
 const hint = (id: string | null) => (id ? SIGNS.find((s) => s.id === id)?.hint ?? '' : '');
 const DEBUG = typeof location !== 'undefined' && /[?&]debug/.test(location.search);
 const RECORD = typeof location !== 'undefined' && /[?&]record/.test(location.search);
+const WEBCAM = typeof location !== 'undefined' && /[?&]webcam/.test(location.search);
 
 export class GameSystem extends createSystem({}) {
   private game!: Game; private handIn!: HandInput; private sfx = new Sfx();
@@ -26,7 +28,7 @@ export class GameSystem extends createSystem({}) {
   private barBack!: Mesh; private barFill!: Mesh; private resT!: TextPlane; private btn2!: TextPlane; private btn2World = new Vector3();
   private parts: { m: Mesh; v: Vector3; life: number }[] = []; private pulse = 0; private floatLife = 0; private stars!: Points; private touching: Record<string, boolean> = {}; private pokeCool = 0; private keyPoke = false;
   private lastTickSec = -1;
-  private tlog: TestLog | null = RECORD ? new TestLog() : null; private sky!: Points; private skyKey = ''; private trail!: Points; private trailPos!: Float32Array; private trailCol!: Float32Array; private trailHead = 0; private lastTips: Vector3[] = [];
+  private tlog: TestLog | null = RECORD ? new TestLog() : null; private camOn = WEBCAM ? startWebcam((j) => { this.handIn.override = j; }).catch((e) => { console.warn('webcam mode failed', e); alert('Webcam mode could not start: ' + (e && e.message ? e.message : e)); }) : null; private sky!: Points; private skyKey = ''; private trail!: Points; private trailPos!: Float32Array; private trailCol!: Float32Array; private trailHead = 0; private lastTips: Vector3[] = [];
 
   init(): void {
     this.game = new Game(makeStore()); this.handIn = new HandInput(this.renderer);
