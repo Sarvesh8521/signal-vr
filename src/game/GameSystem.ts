@@ -79,6 +79,21 @@ export class GameSystem extends createSystem({}) {
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', (e) => { const i = '1234567890'.indexOf(e.key); if (i >= 0 && DEBUG) this.handIn.fakeSign = Object.keys(SPECS)[i]; if (e.key === ' ') this.keyPoke = true; });
       window.addEventListener('keyup', (e) => { if ('1234567890'.includes(e.key)) this.handIn.fakeSign = null; });
+      // No-headset visitors: tap anywhere to start, and offer the camera mode (Quest users never see this)
+      window.addEventListener('pointerdown', () => { if (!this.renderer.xr.isPresenting) this.keyPoke = true; });
+      if (!WEBCAM && typeof navigator !== 'undefined') {
+        const xrApi = (navigator as any).xr;
+        (xrApi ? xrApi.isSessionSupported('immersive-vr').catch(() => false) : Promise.resolve(false)).then((ok: boolean) => {
+          if (ok) return;
+          const d = document.createElement('div');
+          d.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:99997;width:min(92vw,420px);font:14px system-ui;background:rgba(7,11,26,.94);color:#e2e8f0;padding:12px 14px;border-radius:12px;border:1px solid #22d3ee;text-align:center';
+          d.innerHTML = '<b>SIGNAL is made for Meta Quest hand tracking.</b><br>No headset? Try it with your camera: hold your open hand up to the camera, then tap the screen to start.<br>';
+          const btn = document.createElement('button'); btn.textContent = 'Use my camera';
+          btn.style.cssText = 'margin-top:8px;background:#0e7490;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:15px;cursor:pointer';
+          btn.onclick = () => { btn.disabled = true; btn.textContent = 'Starting camera...'; startWebcam((j) => { this.handIn.override = j; }).then(() => d.remove()).catch((e) => { btn.disabled = false; btn.textContent = 'Use my camera'; alert('Camera could not start: ' + (e && e.message ? e.message : e)); }); };
+          d.addEventListener('pointerdown', (ev) => ev.stopPropagation()); d.appendChild(btn); document.body.appendChild(d);
+        });
+      }
       (window as any).__signal = { game: this.game, input: this.handIn };
     }
     this.layout(); this.applyEvents([{ type: 'phase', phase: 'menu' }]);
