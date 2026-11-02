@@ -121,7 +121,7 @@ export class GameSystem extends createSystem({}) {
     this.keyPoke = false;
     const tgt = this.game.target, ph = this.game.phase, age = this.game.targetAge;
     const evs = this.game.update(now, { match: frame.match, poke, features: frame.features }); this.applyEvents(evs);
-    this.tlog?.frame(tgt, ph, frame.features, frame.match, evs, age);
+    this.tlog?.frame(tgt, ph, frame.features, frame.match, evs, age); this.tlog?.tick(delta);
     this.render(frame, dt);
   }
 

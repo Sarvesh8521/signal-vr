@@ -7,6 +7,7 @@ const r2 = (x: number) => Math.round(x * 100) / 100;
 
 /** Passive tester log: while someone plays normally, records per-target features, predictions and accept/timeout counts. Nothing leaves the device unless the tester taps Copy or Download. */
 export class TestLog {
+  private dtSum = 0; private dtN = 0; private slow = 0;
   private rows: Record<string, Row> = {}; private frames = 0; private lost = 0; private lbl: HTMLElement | null = null;
   constructor(ui = typeof document !== 'undefined') { if (ui) this.mount(); }
   private row(t: string): Row { return (this.rows[t] ||= { n: 0, sum: FK.map(() => 0), sq: FK.map(() => 0), pred: {}, ok: 0, miss: 0, ms: 0, samples: [], seen: 0, acc: [] }); }
@@ -23,6 +24,7 @@ export class TestLog {
     for (const e of evs) { if (e.type === 'success') { r.ok++; r.ms += targetAgeMs; if (f && r.acc.length < 30) r.acc.push(FK.map((k) => r2(f[k]))); } else if (e.type === 'timeout') r.miss++; }
     if (this.lbl && (this.frames + this.lost) % 30 === 0) this.lbl.textContent = `SIGNAL test data: ${this.frames} frames`;
   }
+  tick(dt: number) { if (!(dt > 0) || dt > 1) return; this.dtSum += dt; this.dtN++; if (dt > 1 / 58) this.slow++; }
   summary() {
     const signs: Record<string, unknown> = {};
     for (const [id, r] of Object.entries(this.rows)) {
@@ -30,7 +32,7 @@ export class TestLog {
       FK.forEach((k, i) => { const m = r.n ? r.sum[i] / r.n : 0; mean[k] = r2(m); sd[k] = r2(Math.sqrt(Math.max(0, (r.n ? r.sq[i] / r.n : 0) - m * m))); });
       signs[id] = { frames: r.n, accepted: r.ok, timeouts: r.miss, avgAcceptMs: r.ok ? Math.round(r.ms / r.ok) : null, predicted: r.pred, mean, sd, acceptedPoses: r.acc, samples: r.samples };
     }
-    return { app: 'SIGNAL', build: 'tester-log-2', when: new Date().toISOString(), device: typeof navigator !== 'undefined' ? navigator.userAgent : '', frames: this.frames, trackingLostFrames: this.lost, signs };
+    return { app: 'SIGNAL', build: 'tester-log-2', when: new Date().toISOString(), device: typeof navigator !== 'undefined' ? navigator.userAgent : '', frames: this.frames, trackingLostFrames: this.lost, perf: { avgFps: this.dtN ? Math.round(this.dtN / this.dtSum) : null, framesBelow60fpsPct: this.dtN ? Math.round((1000 * this.slow) / this.dtN) / 10 : null, frameSamples: this.dtN }, signs };
   }
   json() { return JSON.stringify(this.summary()); }
   private mount() {
