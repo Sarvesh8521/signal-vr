@@ -5,6 +5,7 @@ import { MrNode } from './mr';
 import { LastLight } from './lastlight';
 import { LLView } from './llview';
 import { Ambience } from './ambience';
+import { Arena } from './world';
 import { Stabilizer } from '../pose/stabilizer';
 import { startWebcam } from './webcam';
 function glowTex(): CanvasTexture { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d')!; const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new CanvasTexture(c); }
@@ -36,7 +37,7 @@ export class GameSystem extends createSystem({}) {
   private barBack!: Mesh; private barFill!: Mesh; private resT!: TextPlane; private btn2!: TextPlane; private btn2World = new Vector3();
   private parts: { m: Mesh; v: Vector3; life: number }[] = []; private pulse = 0; private floatLife = 0; private stars!: Points; private touching: Record<string, boolean> = {}; private pokeCool = 0; private keyPoke = false;
   private lastTickSec = -1;
-  private tlog: TestLog | null = RECORD ? new TestLog() : null; private camOn = WEBCAM ? startWebcam((j) => { this.handIn.override = j; }).catch((e) => { console.warn('webcam mode failed', e); alert('Webcam mode could not start: ' + (e && e.message ? e.message : e)); }) : null; private domeMat!: MeshBasicMaterial; private wave!: Mesh; private waveT = 1; private restore = (() => { try { return globalThis.localStorage?.getItem('signal:seenTeach') ? 0.6 : 0.12; } catch { return 0.12; } })(); private chainT!: TextPlane; private ll = new LastLight(); private llv!: LLView; private llStab = new Stabilizer(); private llInit = false; private amb = new Ambience(); private headV = new Vector3(); private tipV = new Vector3(); private mr: MrNode | null = null; private sky!: Points; private skyKey = ''; private trail!: Points; private trailPos!: Float32Array; private trailCol!: Float32Array; private trailHead = 0; private lastTips: Vector3[] = [];
+  private tlog: TestLog | null = RECORD ? new TestLog() : null; private camOn = WEBCAM ? startWebcam((j) => { this.handIn.override = j; }).catch((e) => { console.warn('webcam mode failed', e); alert('Webcam mode could not start: ' + (e && e.message ? e.message : e)); }) : null; private domeMat!: MeshBasicMaterial; private wave!: Mesh; private waveT = 1; private restore = (() => { try { return globalThis.localStorage?.getItem('signal:seenTeach') ? 0.6 : 0.12; } catch { return 0.12; } })(); private chainT!: TextPlane; private ll = new LastLight(Math.random, MR ? 2.4 : 3.4); private llv!: LLView; private llStab = new Stabilizer(); private llStab2 = new Stabilizer(); private llInit = false; private amb = new Ambience(); private arena: Arena | null = null; private headV = new Vector3(); private tipV = new Vector3(); private mr: MrNode | null = null; private sky!: Points; private skyKey = ''; private trail!: Points; private trailPos!: Float32Array; private trailCol!: Float32Array; private trailHead = 0; private lastTips: Vector3[] = [];
 
   init(): void {
     this.game = new Game(makeStore()); this.handIn = new HandInput(this.renderer);
@@ -92,7 +93,7 @@ export class GameSystem extends createSystem({}) {
         (xrApi ? xrApi.isSessionSupported('immersive-vr').catch(() => false) : Promise.resolve(false)).then((ok: boolean) => {
           if (ok) return;
           const d = document.createElement('div');
-          d.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:99997;width:min(92vw,420px);font:14px system-ui;background:rgba(7,11,26,.94);color:#e2e8f0;padding:12px 14px;border-radius:12px;border:1px solid #22d3ee;text-align:center';
+          d.style.cssText = 'position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:99997;width:min(92vw,420px);font:14px system-ui;background:rgba(7,11,26,.94);color:#e2e8f0;padding:12px 14px;border-radius:12px;border:1px solid #22d3ee;text-align:center';
           d.innerHTML = '<b>SIGNAL is made for Meta Quest hand tracking.</b><br>No headset? Try it with your camera: hold your open hand up to the camera, then tap the screen to start.<br>';
           const btn = document.createElement('button'); btn.textContent = 'Use my camera';
           btn.style.cssText = 'margin-top:8px;background:#0e7490;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:15px;cursor:pointer';
@@ -126,9 +127,10 @@ export class GameSystem extends createSystem({}) {
   private updateLL(delta: number) {
     const now = performance.now(), dt = Math.min(0.05, delta || 0.016), ll = this.ll;
     if (!this.llInit) {
-      this.llInit = true; this.llv = new LLView(this.scene); this.barBack.visible = false; this.barFill.visible = false; this.letter.mesh.visible = false;
-      this.title.set('LAST LIGHT', { size: 0.13, color: COLORS.cyan, weight: '900' }); this.tag.set('The shadows are coming. Your hands are the only light.', { size: 0.034, color: COLORS.white, weight: '500' });
-      this.menuInfo.set('Sign the glowing letter on a shadow to burn it.\nHold each sign a moment. Bosses fall only when you spell their word.', { size: 0.03, color: COLORS.amber, lineHeight: 1.4 });
+      this.llInit = true; this.llv = new LLView(this.scene); if (DEBUG) (window as any).__ll = this.ll;
+      if (!MR) { this.arena = new Arena(this.scene); this.scene.children.forEach((c: any) => { if (c.renderOrder === -10) c.visible = false; }); this.stars.visible = false; if (this.sky) this.sky.visible = false; } this.barBack.visible = false; this.barFill.visible = false; this.letter.mesh.visible = false;
+      this.title.set('LAST LIGHT', { size: 0.1, color: COLORS.cyan, weight: '900' }); this.tag.set('The shadows are coming. Your hands are the only light.', { size: 0.026, color: COLORS.white, weight: '500' });
+      this.menuInfo.set('Sign the glowing letter on a shadow to burn it.\nUse both hands. Spell a boss\'s word to slay it.', { size: 0.026, color: COLORS.amber, lineHeight: 1.4 });
     }
     const frame = this.handIn.read(); this.camera.getWorldPosition(this.headV);
     let poke = false; this.pokeCool -= dt;
@@ -139,23 +141,24 @@ export class GameSystem extends createSystem({}) {
       if (this.keyPoke) { poke = true; this.pokeCool = 0.8; }
     }
     this.keyPoke = false;
-    const st = this.llStab.update(frame.match, now), confirmed = ll.phase === 'play' ? st.confirmed : null;
-    if (poke) { ll.start(); this.llStab.reset(); this.sfx.start(); this.amb.start(); }
+    const s0 = this.llStab.update(frame.matches[0] ?? null, now), s1 = this.llStab2.update(frame.matches[1] ?? null, now), confirmed: string[] = [];
+    if (ll.phase === 'play') { if (s0.confirmed) confirmed.push(s0.confirmed); if (s1.confirmed) confirmed.push(s1.confirmed); this.tlog?.llTrack(frame.tracked > 0); }
+    if (poke) { ll.start(); this.llStab.reset(); this.llStab2.reset(); this.sfx.start(); this.amb.start(); }
     const evs = ll.update(dt, confirmed);
     if (frame.tips.length) this.tipV.copy(frame.tips[0]); else this.tipV.set(this.headV.x + 0.2, this.headV.y - 0.3, this.headV.z - 0.3);
     for (const e of evs) {
       if (e.type === 'kill') {
         const x = this.headV.x + e.x, y = this.headV.y + e.y, z = this.headV.z + e.z; this.llv.fire(this.tipV, x, y, z); this.llv.puff(x, y, z, e.special ? '#fb923c' : '#fde68a'); this.llv.ring(x, y, z, this.headV, e.special === 'boss' ? '#ef4444' : '#67e8f9');
-        this.sfx.success(e.combo); this.llStab.reset();
+        this.sfx.success(e.combo); this.llStab.reset(); this.llStab2.reset(); this.pulse = 0.4; this.tlog?.llKill(e.sign, frame.features, e.special === 'boss');
         if (e.combo % 5 === 0 || e.special === 'boss') { this.floatT.set(e.special === 'boss' ? 'BOSS DOWN!' : `x${e.combo}!`, { size: 0.07, color: COLORS.amber }); this.floatLife = 1.3; }
       } else if (e.type === 'bossHit') { this.sfx.success(8); this.llStab.reset(); this.pulse = 0.4; }
-      else if (e.type === 'hit') { this.sfx.timeout(); this.llv.hitFlash(); }
+      else if (e.type === 'hit') { this.sfx.timeout(); this.llv.hitFlash(); this.tlog?.llHit(); }
       else if (e.type === 'wave') { this.sfx.best(); this.floatT.set(`WAVE ${e.wave}`, { size: 0.07, color: COLORS.cyan }); this.floatLife = 1.5; }
-      else if (e.type === 'over') { this.sfx.end(); this.amb.stop(); }
+      else if (e.type === 'over') { this.sfx.end(); this.amb.stop(); this.tlog?.llOver(e.score, ll.wave); }
     }
     this.floatLife = Math.max(0, this.floatLife - dt); if (this.floatLife <= 0) this.floatT.set('', {});
     this.menu.visible = ll.phase === 'menu'; this.playG.visible = ll.phase === 'play'; this.result.visible = ll.phase === 'over'; this.llv.group.visible = ll.phase === 'play';
-    this.llv.sync(ll.enemies, this.headV, now / 1000); this.llv.setLight(ll.light, this.headV, now / 1000); this.llv.tick(dt); this.amb.tick(dt, ll.light, ll.wave); this.updateTrail(frame); this.stars.rotation.y += dt * 0.01;
+    this.llv.sync(ll.enemies, this.headV, now / 1000); this.llv.setLight(ll.light, this.headV, now / 1000); this.llv.tick(dt); this.amb.tick(dt, ll.light, ll.wave); this.pulse = Math.max(0, this.pulse - dt); this.tlog?.tick(delta); this.arena?.update(now / 1000, ll.phase === 'play' ? ll.light / 100 : 1, this.headV, Math.min(1, this.pulse * 2.5)); this.updateTrail(frame); this.stars.rotation.y += dt * 0.01;
     const near = frame.tips.some((t) => t.distanceTo(this.btnWorld) < 0.12);
     if (ll.phase === 'menu') this.btn.set('PLAY', { size: 0.055, bg: near ? COLORS.cyan : 'rgba(34,211,238,0.28)', border: COLORS.cyan, color: near ? '#001018' : COLORS.cyan, radius: 0.05 });
     else if (ll.phase === 'play') {

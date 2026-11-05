@@ -15,7 +15,7 @@ const POOLS: string[][] = [['B', 'L', 'Y', 'I', 'FIST'], ['V', 'W', 'ILY'], ['O'
 export class LastLight {
   phase: 'menu' | 'play' | 'over' = 'menu'; light = 100; score = 0; combo = 0; bestCombo = 0; kills = 0; time = 0; best = 0; enemies: Enemy[] = [];
   private spawnT = 0; private nid = 1; private lastWave = 1; private bossDone = 0;
-  constructor(private rand: () => number = Math.random) { try { this.best = Number(globalThis.localStorage?.getItem('signal:ll:best')) || 0; } catch { this.best = 0; } }
+  constructor(private rand: () => number = Math.random, private spawnDist = 3.4) { try { this.best = Number(globalThis.localStorage?.getItem('signal:ll:best')) || 0; } catch { this.best = 0; } }
   get wave() { return 1 + Math.floor(this.time / 15); }
   get waveName() { return NAMES[(this.wave - 1) % NAMES.length]; }
   get boss(): Enemy | null { return this.enemies.find((e) => e.word) ?? null; }
@@ -25,10 +25,10 @@ export class LastLight {
   private spawn() {
     const pool = this.pool(); let sign = pool[Math.floor(this.rand() * pool.length)];
     for (let i = 0; i < 4 && this.enemies.filter((e) => e.sign === sign).length >= 2; i++) sign = pool[Math.floor(this.rand() * pool.length)];
-    const az = (this.rand() - 0.5) * 2, dist = 3.4;
+    const az = (this.rand() - 0.5) * 2, dist = this.spawnDist;
     this.enemies.push({ id: this.nid++, sign, az, dist, x: Math.sin(az) * dist, z: -Math.cos(az) * dist, y: (this.rand() - 0.3) * 0.7 });
   }
-  private spawnBoss() { const word = BOSSES[this.bossDone % BOSSES.length]; this.bossDone++; this.enemies.push({ id: this.nid++, sign: word[0], word, pos: 0, az: 0, dist: 3.8, x: 0, z: -3.8, y: 0.25 }); }
+  private spawnBoss() { const word = BOSSES[this.bossDone % BOSSES.length]; this.bossDone++; this.enemies.push({ id: this.nid++, sign: word[0], word, pos: 0, az: 0, dist: this.spawnDist + 0.4, x: 0, z: -(this.spawnDist + 0.4), y: 0.25 }); }
   private remove(e: Enemy) { const i = this.enemies.indexOf(e); if (i >= 0) this.enemies.splice(i, 1); }
   private kill(e: Enemy, ev: LLEvent[], special: string | null) {
     this.remove(e); this.combo++; this.bestCombo = Math.max(this.bestCombo, this.combo); this.kills++;
@@ -49,17 +49,17 @@ export class LastLight {
     if (sign === 'V') { const n = this.enemies.filter((e) => !e.word).sort((a, c) => a.dist - c.dist)[0]; if (n) this.kill(n, ev, 'pierce'); } // pierces the next shadow too
     if (sign === 'O') this.light = Math.min(100, this.light + 8); // O restores light
   }
-  update(dt: number, confirmed: string | null): LLEvent[] {
+  update(dt: number, confirmed: string | string[] | null): LLEvent[] {
     const ev: LLEvent[] = []; if (this.phase !== 'play') return ev;
     this.time += dt; const w = this.wave, speed = Math.min(0.45, 0.16 + 0.02 * (w - 1)), cap = Math.min(7, 2 + w), every = Math.max(1.6, 3.6 - 0.25 * (w - 1));
     if (this.wave !== this.lastWave) { this.lastWave = this.wave; ev.push({ type: 'wave', wave: this.wave, name: this.waveName }); }
     if (this.bossDone < Math.floor(this.wave / 4) && !this.boss) this.spawnBoss();
-    this.spawnT -= dt; if (this.spawnT <= 0) { if (this.enemies.filter((e) => !e.word).length < cap) { this.spawn(); this.spawnT = every; } else this.spawnT = 0.4; }
+    this.spawnT -= dt; if (this.spawnT <= 0) { if (this.enemies.filter((e) => !e.word).length < cap) { this.spawn(); if (this.wave >= 3 && this.rand() < 0.3 && this.enemies.filter((e) => !e.word).length < cap) this.spawn(); this.spawnT = every; } else this.spawnT = 0.4; }
     for (const e of [...this.enemies]) {
       e.dist -= (e.word ? speed * 0.45 : speed) * dt; e.x = Math.sin(e.az) * e.dist; e.z = -Math.cos(e.az) * e.dist;
       if (e.dist <= (e.word ? 0.8 : 0.55)) { this.remove(e); this.light = Math.max(0, this.light - (e.word ? 40 : 14)); this.combo = 0; ev.push({ type: 'hit', id: e.id, light: this.light }); }
     }
-    if (confirmed) this.cast(confirmed, ev);
+    for (const c of confirmed ? (Array.isArray(confirmed) ? confirmed : [confirmed]) : []) this.cast(c, ev); // each hand can cast its own sign
     if (this.light <= 0) {
       this.phase = 'over'; if (this.score > this.best) { this.best = this.score; try { globalThis.localStorage?.setItem('signal:ll:best', String(this.best)); } catch { /* ignore */ } }
       ev.push({ type: 'over', score: this.score, best: this.best, kills: this.kills });

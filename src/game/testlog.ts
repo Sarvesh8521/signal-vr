@@ -8,6 +8,11 @@ const r2 = (x: number) => Math.round(x * 100) / 100;
 /** Passive tester log: while someone plays normally, records per-target features, predictions and accept/timeout counts. Nothing leaves the device unless the tester taps Copy or Download. */
 export class TestLog {
   private dtSum = 0; private dtN = 0; private slow = 0;
+  private ll = { rounds: 0, bestScore: 0, maxWave: 0, hits: 0, bossKills: 0, lostFrames: 0, frames: 0, kills: {} as Record<string, number>, poses: {} as Record<string, number[][]> };
+  llTrack(tracked: boolean) { this.ll.frames++; if (!tracked) this.ll.lostFrames++; }
+  llKill(sign: string, f: Features | null, boss: boolean) { this.ll.kills[sign] = (this.ll.kills[sign] || 0) + 1; if (boss) this.ll.bossKills++; const a = (this.ll.poses[sign] ||= []); if (f && a.length < 30) a.push(FK.map((k) => r2(f[k]))); }
+  llHit() { this.ll.hits++; }
+  llOver(score: number, wave: number) { this.ll.rounds++; this.ll.bestScore = Math.max(this.ll.bestScore, score); this.ll.maxWave = Math.max(this.ll.maxWave, wave); }
   private rows: Record<string, Row> = {}; private frames = 0; private lost = 0; private lbl: HTMLElement | null = null;
   constructor(ui = typeof document !== 'undefined') { if (ui) this.mount(); }
   private row(t: string): Row { return (this.rows[t] ||= { n: 0, sum: FK.map(() => 0), sq: FK.map(() => 0), pred: {}, ok: 0, miss: 0, ms: 0, samples: [], seen: 0, acc: [] }); }
@@ -32,7 +37,7 @@ export class TestLog {
       FK.forEach((k, i) => { const m = r.n ? r.sum[i] / r.n : 0; mean[k] = r2(m); sd[k] = r2(Math.sqrt(Math.max(0, (r.n ? r.sq[i] / r.n : 0) - m * m))); });
       signs[id] = { frames: r.n, accepted: r.ok, timeouts: r.miss, avgAcceptMs: r.ok ? Math.round(r.ms / r.ok) : null, predicted: r.pred, mean, sd, acceptedPoses: r.acc, samples: r.samples };
     }
-    return { app: 'SIGNAL', build: 'tester-log-2', when: new Date().toISOString(), device: typeof navigator !== 'undefined' ? navigator.userAgent : '', frames: this.frames, trackingLostFrames: this.lost, perf: { avgFps: this.dtN ? Math.round(this.dtN / this.dtSum) : null, framesBelow60fpsPct: this.dtN ? Math.round((1000 * this.slow) / this.dtN) / 10 : null, frameSamples: this.dtN }, signs };
+    return { app: 'SIGNAL', build: 'tester-log-2', when: new Date().toISOString(), device: typeof navigator !== 'undefined' ? navigator.userAgent : '', frames: this.frames, trackingLostFrames: this.lost, lastLight: this.ll, perf: { avgFps: this.dtN ? Math.round(this.dtN / this.dtSum) : null, framesBelow60fpsPct: this.dtN ? Math.round((1000 * this.slow) / this.dtN) / 10 : null, frameSamples: this.dtN }, signs };
   }
   json() { return JSON.stringify(this.summary()); }
   private mount() {
