@@ -14,7 +14,7 @@ const POOLS: string[][] = [['B', 'L', 'Y', 'I', 'FIST'], ['V', 'W', 'ILY'], ['O'
 /** LAST LIGHT engine: shadows close in, each carries a handshape, a held sign burns the nearest matching one. Pure logic, no rendering. */
 export class LastLight {
   phase: 'menu' | 'play' | 'over' = 'menu'; light = 100; score = 0; combo = 0; bestCombo = 0; kills = 0; time = 0; best = 0; enemies: Enemy[] = [];
-  private spawnT = 0; private nid = 1; private lastWave = 1; private bossDone = 0;
+  relaxed = false; private spawnT = 0; private nid = 1; private lastWave = 1; private bossDone = 0;
   constructor(private rand: () => number = Math.random, private spawnDist = 3.4) { try { this.best = Number(globalThis.localStorage?.getItem('signal:ll:best')) || 0; } catch { this.best = 0; } }
   get wave() { return 1 + Math.floor(this.time / 15); }
   get waveName() { return NAMES[(this.wave - 1) % NAMES.length]; }
@@ -49,15 +49,15 @@ export class LastLight {
     if (sign === 'V') { const n = this.enemies.filter((e) => !e.word).sort((a, c) => a.dist - c.dist)[0]; if (n) this.kill(n, ev, 'pierce'); } // pierces the next shadow too
     if (sign === 'O') this.light = Math.min(100, this.light + 8); // O restores light
   }
-  update(dt: number, confirmed: string | string[] | null): LLEvent[] {
-    const ev: LLEvent[] = []; if (this.phase !== 'play') return ev;
-    this.time += dt; const w = this.wave, speed = Math.min(0.45, 0.16 + 0.02 * (w - 1)), cap = Math.min(7, 2 + w), every = Math.max(1.6, 3.6 - 0.25 * (w - 1));
+  update(dt: number, confirmed: string | string[] | null, paused = false): LLEvent[] {
+    const ev: LLEvent[] = []; if (this.phase !== 'play' || paused) return ev;
+    this.time += dt; const w = this.wave, speed = Math.min(0.45, 0.16 + 0.02 * (w - 1)) * (this.relaxed ? 0.6 : 1), cap = Math.min(7, 2 + w), every = Math.max(1.6, 3.6 - 0.25 * (w - 1)) * (this.relaxed ? 1.4 : 1);
     if (this.wave !== this.lastWave) { this.lastWave = this.wave; ev.push({ type: 'wave', wave: this.wave, name: this.waveName }); }
     if (this.bossDone < Math.floor(this.wave / 4) && !this.boss) this.spawnBoss();
     this.spawnT -= dt; if (this.spawnT <= 0) { if (this.enemies.filter((e) => !e.word).length < cap) { this.spawn(); if (this.wave >= 3 && this.rand() < 0.3 && this.enemies.filter((e) => !e.word).length < cap) this.spawn(); this.spawnT = every; } else this.spawnT = 0.4; }
     for (const e of [...this.enemies]) {
       e.dist -= (e.word ? speed * 0.45 : speed) * dt; e.x = Math.sin(e.az) * e.dist; e.z = -Math.cos(e.az) * e.dist;
-      if (e.dist <= (e.word ? 0.8 : 0.55)) { this.remove(e); this.light = Math.max(0, this.light - (e.word ? 40 : 14)); this.combo = 0; ev.push({ type: 'hit', id: e.id, light: this.light }); }
+      if (e.dist <= (e.word ? 0.8 : 0.55)) { this.remove(e); this.light = Math.max(0, this.light - Math.round((e.word ? 40 : 14) * (this.relaxed ? 0.5 : 1))); this.combo = 0; ev.push({ type: 'hit', id: e.id, light: this.light }); }
     }
     for (const c of confirmed ? (Array.isArray(confirmed) ? confirmed : [confirmed]) : []) this.cast(c, ev); // each hand can cast its own sign
     if (this.light <= 0) {
