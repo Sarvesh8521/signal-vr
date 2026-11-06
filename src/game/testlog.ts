@@ -10,7 +10,9 @@ export class TestLog {
   private dtSum = 0; private dtN = 0; private slow = 0;
   private ll = { rounds: 0, bestScore: 0, maxWave: 0, hits: 0, bossKills: 0, lostFrames: 0, frames: 0, kills: {} as Record<string, number>, poses: {} as Record<string, number[][]> };
   llTrack(tracked: boolean) { this.ll.frames++; if (!tracked) this.ll.lostFrames++; }
-  llKill(sign: string, f: Features | null, boss: boolean) { this.ll.kills[sign] = (this.ll.kills[sign] || 0) + 1; if (boss) this.ll.bossKills++; const a = (this.ll.poses[sign] ||= []); if (f && a.length < 30) a.push(FK.map((k) => r2(f[k]))); }
+  llKill(sign: string, boss: boolean) { this.ll.kills[sign] = (this.ll.kills[sign] || 0) + 1; if (boss) this.ll.bossKills++; }
+  /** Called with the features of the exact hand that confirmed a sign. */
+  llCast(sign: string, f: Features | null) { const a = (this.ll.poses[sign] ||= []); if (f && a.length < 30) a.push(FK.map((k) => r2(f[k]))); }
   llHit() { this.ll.hits++; }
   llOver(score: number, wave: number) { this.ll.rounds++; this.ll.bestScore = Math.max(this.ll.bestScore, score); this.ll.maxWave = Math.max(this.ll.maxWave, wave); }
   private rows: Record<string, Row> = {}; private frames = 0; private lost = 0; private lbl: HTMLElement | null = null;
@@ -29,7 +31,7 @@ export class TestLog {
     for (const e of evs) { if (e.type === 'success') { r.ok++; r.ms += targetAgeMs; if (f && r.acc.length < 30) r.acc.push(FK.map((k) => r2(f[k]))); } else if (e.type === 'timeout') r.miss++; }
     if (this.lbl && (this.frames + this.lost) % 30 === 0) this.lbl.textContent = `SIGNAL test data: ${this.frames} frames`;
   }
-  tick(dt: number) { if (!(dt > 0) || dt > 1) return; this.dtSum += dt; this.dtN++; if (dt > 1 / 58) this.slow++; }
+  tick(dt: number) { if (!(dt > 0) || dt > 1) return; this.dtSum += dt; this.dtN++; if (dt > 1 / 60) this.slow++; }
   summary() {
     const signs: Record<string, unknown> = {};
     for (const [id, r] of Object.entries(this.rows)) {

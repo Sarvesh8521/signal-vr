@@ -2,7 +2,7 @@ import { Group, Mesh, MeshBasicMaterial, RingGeometry, SphereGeometry, CylinderG
 
 /** Opt-in mixed-reality signal node (?mr=1): look at a real wall or table, sign, and a node lands there. Uses plain WebXR hit-test. Needs a Quest to verify. */
 export class MrNode {
-  placed = false; private nodes: Group[] = []; private lines!: LineSegments; private lp = new Float32Array(8 * 6); private scene: any; private src: any = null; private asked = false; private energy = 0; private bloomT = 0; private big = 1;
+  placed = false; failed = false; private nodes: Group[] = []; private lines!: LineSegments; private lp = new Float32Array(8 * 6); private scene: any; private src: any = null; private asked = false; private energy = 0; private bloomT = 0; private big = 1;
   private reticle: Mesh; private node = new Group(); private orb: Mesh; private ring: Mesh; private beam: Mesh;
   private m = new Matrix4(); private p = new Vector3(); private q = new Quaternion(); private s = new Vector3(); private up = new Vector3();
   constructor(scene: any, private renderer: any) {
@@ -21,7 +21,7 @@ export class MrNode {
     if (!session) { this.reticle.visible = false; return; }
     if (!this.asked) {
       this.asked = true;
-      session.requestReferenceSpace('viewer').then((vs: any) => session.requestHitTestSource?.({ space: vs })).then((s: any) => { this.src = s ?? null; }).catch(() => {});
+      session.requestReferenceSpace('viewer').then((vs: any) => session.requestHitTestSource?.({ space: vs })).then((s: any) => { this.src = s ?? null; if (!s) this.failed = true; }).catch(() => { this.failed = true; });
       session.addEventListener('end', () => { this.src = null; this.asked = false; });
     }
     const frame = xr.getFrame?.(), ref = xr.getReferenceSpace?.();
