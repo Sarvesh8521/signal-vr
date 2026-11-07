@@ -1,6 +1,6 @@
 /** Procedural dark ambience for LAST LIGHT: a low drifting pad that brightens with each wave, and a heartbeat when your light runs low. */
 export class Ambience {
-  private ctx: AudioContext | null = null; private pad: GainNode | null = null; private lp: BiquadFilterNode | null = null; private beat = 0; private on = false;
+  private ctx: AudioContext | null = null; private pad: GainNode | null = null; private lp: BiquadFilterNode | null = null; private beat = 0; private on = false; private th: OscillatorNode | null = null; private thG: GainNode | null = null; private thP: StereoPannerNode | null = null;
   start() {
     try {
       if (!this.ctx) {
@@ -8,11 +8,15 @@ export class Ambience {
         this.lp = c.createBiquadFilter(); this.lp.type = 'lowpass'; this.lp.frequency.value = 420; this.pad = c.createGain(); this.pad.gain.value = 0;
         [55, 82.41, 110.3, 164.8].forEach((f, i) => { const o = c.createOscillator(); o.type = i % 2 ? 'sawtooth' : 'triangle'; o.frequency.value = f; o.detune.value = (i - 1.5) * 7; o.connect(this.lp!); o.start(); });
         this.lp.connect(this.pad); this.pad.connect(c.destination);
+        // threat hum: a low tone panned toward the nearest shadow that rises as it closes in
+        this.th = c.createOscillator(); this.th.type = 'sawtooth'; this.th.frequency.value = 62; this.thG = c.createGain(); this.thG.gain.value = 0; this.thP = c.createStereoPanner(); this.th.connect(this.thG).connect(this.thP).connect(c.destination); this.th.start();
       }
       this.ctx.resume?.(); this.on = true; this.pad!.gain.setTargetAtTime(0.07, this.ctx.currentTime, 0.8);
     } catch { /* audio unavailable */ }
   }
-  stop() { this.on = false; if (this.ctx && this.pad) this.pad.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4); }
+  stop() { this.on = false; if (this.ctx && this.pad) this.pad.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4); if (this.ctx && this.thG) this.thG.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2); }
+  /** pan -1 (left) .. 1 (right) toward the nearest shadow; prox 0..1 as it gets closer. */
+  threat(pan: number, prox: number) { if (!this.on || !this.ctx || !this.thG || !this.thP || !this.th) return; const t = this.ctx.currentTime; this.thG.gain.setTargetAtTime(Math.max(0, prox) * 0.05, t, 0.1); this.thP.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.1); this.th.frequency.setTargetAtTime(60 + 70 * prox, t, 0.2); }
   tick(dt: number, light: number, wave: number) {
     if (!this.on || !this.ctx || !this.lp) return;
     this.lp.frequency.setTargetAtTime(380 + wave * 90, this.ctx.currentTime, 0.5);
